@@ -1,9 +1,8 @@
-import math
-
 import pygame
 from pygame.math import Vector2
-from controller import AutopilotController, CommandState, DroneState, FastAutopilotController, TargetState
+from controller import AutopilotController, DroneState, FastAutopilotController, TargetState
 from target_utils import generate_random_target
+from drone_body import Drone
 
 
 WIDTH, HEIGHT = 1280, 800
@@ -31,58 +30,6 @@ def world_to_screen(point_m: Vector2) -> tuple[int, int]:
     return round(point_m.x * PIXELS_PER_METER), round(point_m.y * PIXELS_PER_METER)
 
 
-class MainBody:
-    def __init__(self) -> None:
-        self.pos = START_POS_M.copy()
-        self.vel = Vector2(0, 0)
-        self.mass_kg = DRONE_MASS_KG
-        self.width_m = BODY_WIDTH_M
-        self.height_m = BODY_HEIGHT_M
-        self.base_angle_deg = -90.0
-        self.angle_deg = self.base_angle_deg
-
-    @property
-    def angle_rad(self) -> float:
-        return math.radians(self.angle_deg)
-
-    @property
-    def normal(self) -> Vector2:
-        return Vector2(math.cos(self.angle_rad), math.sin(self.angle_rad))
-
-    @property
-    def tangent(self) -> Vector2:
-        n = self.normal
-        return Vector2(-n.y, n.x)
-
-    def axis_extents(self) -> tuple[float, float]:
-        half_w = self.width_m * 0.5
-        half_h = self.height_m * 0.5
-        tang = self.tangent
-        norm = self.normal
-        extent_x = abs(tang.x) * half_w + abs(norm.x) * half_h
-        extent_y = abs(tang.y) * half_w + abs(norm.y) * half_h
-        return extent_x, extent_y
-
-    def reset(self) -> None:
-        self.angle_deg = self.base_angle_deg
-        _, extent_y = self.axis_extents()
-        self.pos = Vector2(START_POS_M.x, WORLD_HEIGHT_M - extent_y)
-        self.vel = Vector2(0, 0)
-
-    def draw(self, surface: pygame.Surface) -> None:
-        half_w = self.width_m * 0.5
-        half_h = self.height_m * 0.5
-        tang = self.tangent
-        norm = self.normal
-        corners = [
-            self.pos + tang * half_w + norm * half_h,
-            self.pos - tang * half_w + norm * half_h,
-            self.pos - tang * half_w - norm * half_h,
-            self.pos + tang * half_w - norm * half_h,
-        ]
-        pygame.draw.polygon(surface, DRONE_COLOR, [world_to_screen(corner) for corner in corners])
-
-
 def draw_markers(surface: pygame.Surface, target_pos_m: Vector2) -> None:
     start_center = world_to_screen(START_POS_M)
     pygame.draw.circle(surface, START_COLOR, start_center, 6)
@@ -102,8 +49,11 @@ def main() -> None:
     font = pygame.font.SysFont(None, 30)
     small_font = pygame.font.SysFont(None, 22)
 
-    body = MainBody()
-    body.reset()
+    body = Drone(START_POS_M.copy(), BODY_WIDTH_M, BODY_HEIGHT_M, DRONE_MASS_KG)
+    body.angle_deg = body.base_angle_deg
+    _, extent_y = body.axis_extents()
+    body.pos = Vector2(START_POS_M.x, WORLD_HEIGHT_M - extent_y)
+    body.vel = Vector2(0, 0)
     extent_x, extent_y = body.axis_extents()
     target_pos_m = generate_random_target(extent_x, extent_y, WORLD_WIDTH_M, WORLD_HEIGHT_M)
     smooth_controller = AutopilotController()
@@ -124,7 +74,10 @@ def main() -> None:
                 elif event.key == pygame.K_SPACE:
                     paused = not paused
                 elif event.key == pygame.K_r:
-                    body.reset()
+                    body.angle_deg = body.base_angle_deg
+                    _, extent_y = body.axis_extents()
+                    body.pos = Vector2(START_POS_M.x, WORLD_HEIGHT_M - extent_y)
+                    body.vel = Vector2(0, 0)
                     target_pos_m = generate_random_target(extent_x, extent_y, WORLD_WIDTH_M, WORLD_HEIGHT_M)
                     smooth_controller.reset()
                     fast_controller.reset()
@@ -152,7 +105,10 @@ def main() -> None:
 
             extent_x, extent_y = body.axis_extents()
             if body.pos.x - extent_x < 0.0 or body.pos.x + extent_x > WORLD_WIDTH_M or body.pos.y - extent_y < 0.0:
-                body.reset()
+                body.angle_deg = body.base_angle_deg
+                _, extent_y = body.axis_extents()
+                body.pos = Vector2(START_POS_M.x, WORLD_HEIGHT_M - extent_y)
+                body.vel = Vector2(0, 0)
                 smooth_controller.reset()
                 fast_controller.reset()
             elif body.pos.y + extent_y > WORLD_HEIGHT_M:
@@ -172,7 +128,7 @@ def main() -> None:
 
         screen.fill(BG_COLOR)
         draw_markers(screen, target_pos_m)
-        body.draw(screen)
+        body.draw(screen, world_to_screen, DRONE_COLOR)
 
         status = "PAUSED" if paused else "RUNNING"
         line_1 = font.render("Simple task version: regenerating target, smooth/fast autopilot", True, TEXT_COLOR)

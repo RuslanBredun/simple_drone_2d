@@ -101,14 +101,26 @@ class PIDController:
 
 
 class AutopilotController:
-    def __init__(self) -> None:
-        self.x_pid = PIDController(kp=4.8, ki=0.02, kd=0.7, integral_limit=2.0, output_limit=5.0)
-        self.y_pid = PIDController(kp=1.6, ki=0.05, kd=0.9, integral_limit=2.0, output_limit=7.0)
+    def __init__(
+        self,
+        *,
+        x_pid: PIDController | None = None,
+        y_pid: PIDController | None = None,
+        velocity_damping_x: float = 1.6,
+        velocity_damping_y: float = 2.0,
+        command_smoothing: float = 0.18,
+        max_pitch_command: float = 0.7,
+        status_prefix: str = "auto pid-smooth",
+    ) -> None:
+        self.x_pid = x_pid or PIDController(kp=4.8, ki=0.02, kd=0.7, integral_limit=2.0, output_limit=5.0)
+        self.y_pid = y_pid or PIDController(kp=1.6, ki=0.05, kd=0.9, integral_limit=2.0, output_limit=7.0)
         self.max_thrust_acc_mps2 = MAX_THRUST_N / DRONE_MASS_KG
         self.neutral_angle_deg = -90.0
-        self.velocity_damping_x = 1.6
-        self.velocity_damping_y = 2.0
-        self.command_smoothing = 0.18
+        self.velocity_damping_x = velocity_damping_x
+        self.velocity_damping_y = velocity_damping_y
+        self.command_smoothing = command_smoothing
+        self.max_pitch_command = max_pitch_command
+        self.status_prefix = status_prefix
         self.prev_command = CommandState(
             throttle=_clamp(GRAVITY_MPS2.y / self.max_thrust_acc_mps2, 0.0, 1.0),
             pitch=0.0,
@@ -136,71 +148,29 @@ class AutopilotController:
             status = f"auto hold   dist={distance_to_target:.2f} m"
             return ControllerOutput(command=command, status_text=status)
 
-        error_x = target.pos_m.x - state.pos_m.x
-        error_y = target.pos_m.y - state.pos_m.y
-        desired_world_acc = Vector2(
-            self.x_pid.update(error_x, dt) - self.velocity_damping_x * state.vel_mps.x,
-            self.y_pid.update(error_y, dt) - self.velocity_damping_y * state.vel_mps.y,
-        )
-
-        required_thrust_acc = desired_world_acc - GRAVITY_MPS2
-        thrust_acc_mag = required_thrust_acc.length()
-
-        if thrust_acc_mag < 1e-6:
-            desired_angle_deg = self.neutral_angle_deg
-        else:
-            desired_angle_deg = math.degrees(math.atan2(required_thrust_acc.y, required_thrust_acc.x))
-
-        raw_pitch_command = _clamp((desired_angle_deg - self.neutral_angle_deg) / MAX_PITCH_DEG, -0.7, 0.7)
-        raw_throttle_command = _clamp(thrust_acc_mag / self.max_thrust_acc_mps2, 0.0, 1.0)
-
-        throttle_command = self.prev_command.throttle + (raw_throttle_command - self.prev_command.throttle) * self.command_smoothing
-        pitch_command = self.prev_command.pitch + (raw_pitch_command - self.prev_command.pitch) * self.command_smoothing
-        command = CommandState(throttle=throttle_command, pitch=pitch_command)
-        self.prev_command = command
+        error_x, error_y, command = self._compute_pid_command(state, target, dt)
         status = (
-            f"auto pid-smooth   ex={error_x:+.2f} m   ey={error_y:+.2f} m   "
-            f"thr={throttle_command:.2f}   pitch={pitch_command:+.2f}"
+            f"{self.status_prefix}   ex={error_x:+.2f} m   ey={error_y:+.2f} m   "
+            f"thr={command.throttle:.2f}   pitch={command.pitch:+.2f}"
         )
         return ControllerOutput(command=command, status_text=status)
 
-
-class FastAutopilotController:
-    def __init__(self) -> None:
-        self.x_pid = PIDController(kp=2.5, ki=0.1, kd=0.4, integral_limit=0.5, output_limit=116.0)
-        self.y_pid = PIDController(kp=2.4, ki=0.01, kd=0.5, integral_limit=10.5, output_limit=54.0)
-        self.max_thrust_acc_mps2 = MAX_THRUST_N / DRONE_MASS_KG
-        self.neutral_angle_deg = -90.0
-        self.velocity_damping_x = 0.25
-        self.velocity_damping_y = 0.35
-        self.max_pitch_command = 1.0
-        self.command_smoothing = 0.18
-        self.prev_command = CommandState(
-            throttle=_clamp(GRAVITY_MPS2.y / self.max_thrust_acc_mps2, 0.0, 1.0),
-            pitch=0.0,
-        )
-
-    def reset(self) -> None:
-        self.x_pid.reset()
-        self.y_pid.reset()
-        self.prev_command = CommandState(
-            throttle=_clamp(GRAVITY_MPS2.y / self.max_thrust_acc_mps2, 0.0, 1.0),
-            pitch=0.0,
-        )
-
-    def compute_command(
+    def _compute_pid_command(
         self,
         state: DroneState,
         target: TargetState,
         dt: float,
-    ) -> ControllerOutput:
+    ) -> tuple[float, float, CommandState]:
         error_x = target.pos_m.x - state.pos_m.x
         error_y = target.pos_m.y - state.pos_m.y
         desired_world_acc = Vector2(
             self.x_pid.update(error_x, dt) - self.velocity_damping_x * state.vel_mps.x,
             self.y_pid.update(error_y, dt) - self.velocity_damping_y * state.vel_mps.y,
         )
+        command = self._command_from_desired_world_acc(desired_world_acc)
+        return error_x, error_y, command
 
+    def _command_from_desired_world_acc(self, desired_world_acc: Vector2) -> CommandState:
         required_thrust_acc = desired_world_acc - GRAVITY_MPS2
         thrust_acc_mag = required_thrust_acc.length()
 
@@ -217,12 +187,33 @@ class FastAutopilotController:
         raw_throttle_command = _clamp(thrust_acc_mag / self.max_thrust_acc_mps2, 0.0, 1.0)
         throttle_command = self.prev_command.throttle + (raw_throttle_command - self.prev_command.throttle) * self.command_smoothing
         pitch_command = self.prev_command.pitch + (raw_pitch_command - self.prev_command.pitch) * self.command_smoothing
-
         command = CommandState(throttle=throttle_command, pitch=pitch_command)
         self.prev_command = command
+        return command
+
+
+class FastAutopilotController(AutopilotController):
+    def __init__(self) -> None:
+        super().__init__(
+            x_pid=PIDController(kp=2.5, ki=0.1, kd=0.4, integral_limit=0.5, output_limit=116.0),
+            y_pid=PIDController(kp=2.4, ki=0.01, kd=0.5, integral_limit=10.5, output_limit=54.0),
+            velocity_damping_x=0.25,
+            velocity_damping_y=0.35,
+            command_smoothing=0.18,
+            max_pitch_command=1.0,
+            status_prefix="auto fast-hit",
+        )
+
+    def compute_command(
+        self,
+        state: DroneState,
+        target: TargetState,
+        dt: float,
+    ) -> ControllerOutput:
+        error_x, error_y, command = self._compute_pid_command(state, target, dt)
         status = (
-            f"auto fast-hit   ex={error_x:+.2f} m   ey={error_y:+.2f} m   "
-            f"thr={throttle_command:.2f}   pitch={pitch_command:+.2f}"
+            f"{self.status_prefix}   ex={error_x:+.2f} m   ey={error_y:+.2f} m   "
+            f"thr={command.throttle:.2f}   pitch={command.pitch:+.2f}"
         )
         return ControllerOutput(command=command, status_text=status)
 

@@ -1,4 +1,5 @@
 import math
+import random
 from dataclasses import dataclass
 from collections import deque
 
@@ -50,6 +51,7 @@ from constants import (
 )
 from ui import DroneControlPanel
 from target_utils import generate_random_target
+from drone_body import Drone
 
 
 pygame.init()
@@ -58,52 +60,6 @@ pygame.display.set_caption("Main Body Control")
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 30)
 small_font = pygame.font.SysFont(None, 22)
-
-
-class MainBody:
-    def __init__(self, pos: Vector2, width_m: float, height_m: float, mass_kg: float) -> None:
-        self.pos = pos
-        self.vel = Vector2(0, 0)
-        self.width_m = width_m
-        self.height_m = height_m
-        self.mass_kg = mass_kg
-        self.base_angle_deg = -90.0
-        self.angle_deg = self.base_angle_deg
-
-    @property
-    def angle_rad(self) -> float:
-        return math.radians(self.angle_deg)
-
-    @property
-    def normal(self) -> Vector2:
-        return Vector2(math.cos(self.angle_rad), math.sin(self.angle_rad))
-
-    @property
-    def tangent(self) -> Vector2:
-        n = self.normal
-        return Vector2(-n.y, n.x)
-
-    def axis_extents(self) -> tuple[float, float]:
-        half_w = self.width_m * 0.5
-        half_h = self.height_m * 0.5
-        tang = self.tangent
-        norm = self.normal
-        extent_x = abs(tang.x) * half_w + abs(norm.x) * half_h
-        extent_y = abs(tang.y) * half_w + abs(norm.y) * half_h
-        return extent_x, extent_y
-
-    def draw(self, surface: pygame.Surface) -> None:
-        half_w = self.width_m * 0.5
-        half_h = self.height_m * 0.5
-        tang = self.tangent
-        norm = self.normal
-        corners = [
-            self.pos + tang * half_w + norm * half_h,
-            self.pos - tang * half_w + norm * half_h,
-            self.pos - tang * half_w - norm * half_h,
-            self.pos + tang * half_w - norm * half_h,
-        ]
-        pygame.draw.polygon(surface, MAIN_BALL_COLOR, [world_to_screen(corner) for corner in corners])
 
 
 @dataclass
@@ -233,7 +189,7 @@ def reflect_coordinate(value: float, velocity: float, minimum: float, maximum: f
     return value, velocity
 
 
-def assign_new_target(task: TaskState, body: MainBody, target_motion: TargetMotionModel | None = None) -> None:
+def assign_new_target(task: TaskState, body: Drone, target_motion: TargetMotionModel | None = None) -> None:
     extent_x, extent_y = body.axis_extents()
     task.target_pos_m = generate_random_target(extent_x, extent_y, WORLD_WIDTH_M, WORLD_HEIGHT_M)
     task.reached = False
@@ -244,7 +200,7 @@ def assign_new_target(task: TaskState, body: MainBody, target_motion: TargetMoti
 def draw_hud(
     surface: pygame.Surface,
     paused: bool,
-    body: MainBody,
+    body: Drone,
     task: TaskState,
     command: CommandState,
     mode: str,
@@ -390,7 +346,7 @@ def draw_wind_vector(surface: pygame.Surface, wind_acc_mps2: Vector2, enabled: b
 
 
 def predict_drone_future_path(
-    body: MainBody,
+    body: Drone,
     command: CommandState,
     wind_acc_mps2: Vector2,
     horizon_s: float = 2.0,
@@ -441,7 +397,7 @@ def predict_target_future_path(
     return future_points
 
 
-def update_task_state(task: TaskState, body: MainBody) -> None:
+def update_task_state(task: TaskState, body: Drone) -> None:
     task.reached = body.pos.distance_to(task.target_pos_m) <= task.tolerance_m
 
 
@@ -450,7 +406,7 @@ def get_manual_command(control_panel: DroneControlPanel) -> CommandState:
     return CommandState(throttle=throttle, pitch=pitch)
 
 
-def make_drone_state(body: MainBody) -> DroneState:
+def make_drone_state(body: Drone) -> DroneState:
     return DroneState(
         pos_m=body.pos.copy(),
         vel_mps=body.vel.copy(),
@@ -467,7 +423,7 @@ def make_target_state(task: TaskState, target_vel_mps: Vector2) -> TargetState:
 
 
 def reset_body(
-    body: MainBody,
+    body: Drone,
     task: TaskState,
     control_panel: DroneControlPanel | None = None,
     autopilots: list[object] | None = None,
@@ -487,7 +443,7 @@ def reset_body(
 
 
 def apply_boundary_rules(
-    body: MainBody,
+    body: Drone,
     task: TaskState,
     control_panel: DroneControlPanel | None = None,
     autopilots: list[object] | None = None,
@@ -511,7 +467,7 @@ def apply_boundary_rules(
 
 
 def main() -> None:
-    body = MainBody(
+    body = Drone(
         Vector2(WORLD_WIDTH_M * 0.5, WORLD_HEIGHT_M * 0.5),
         MAIN_BODY_WIDTH_M,
         MAIN_BODY_HEIGHT_M,
@@ -636,7 +592,7 @@ def main() -> None:
         if controller_output is not None and controller_output.debug_point_m is not None:
             draw_intercept_marker(screen, controller_output.debug_point_m, task.target_pos_m)
         draw_wind_vector(screen, wind_acc_mps2, control_panel.is_wind_enabled())
-        body.draw(screen)
+        body.draw(screen, world_to_screen, MAIN_BALL_COLOR)
         draw_hud(
             screen,
             paused,
