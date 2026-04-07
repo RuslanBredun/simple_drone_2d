@@ -82,7 +82,7 @@ def main() -> None:
                     smooth_controller.reset()
                     fast_controller.reset()
                 elif event.key == pygame.K_1:
-                    mode = "smooth"
+                    mode = "hold"
                     smooth_controller.reset()
                 elif event.key == pygame.K_2:
                     mode = "fast"
@@ -90,7 +90,7 @@ def main() -> None:
 
         state = DroneState(pos_m=body.pos.copy(), vel_mps=body.vel.copy(), angle_deg=body.angle_deg)
         target = TargetState(pos_m=target_pos_m.copy(), tolerance_m=TARGET_TOLERANCE_M, vel_mps=Vector2(0, 0))
-        if mode == "smooth":
+        if mode == "hold":
             controller_output = smooth_controller.compute_command(state, target, dt)
         else:
             controller_output = fast_controller.compute_command(state, target, dt)
@@ -131,7 +131,7 @@ def main() -> None:
         body.draw(screen, world_to_screen, DRONE_COLOR)
 
         status = "PAUSED" if paused else "RUNNING"
-        line_1 = font.render("Simple task version: regenerating target, smooth/fast autopilot", True, TEXT_COLOR)
+        line_1 = font.render("Simple task version: regenerating target, hold/fast autopilot", True, TEXT_COLOR)
         line_2 = small_font.render(
             f"{status}   mode={mode.upper()}   pos=({body.pos.x:.2f}, {body.pos.y:.2f}) m   vel=({body.vel.x:+.2f}, {body.vel.y:+.2f}) m/s",
             True,
@@ -143,7 +143,7 @@ def main() -> None:
             TEXT_COLOR,
         )
         line_4 = small_font.render(
-            f"throttle={command.throttle:.2f}   pitch={command.pitch:+.2f}   1 smooth   2 fast   R reset",
+            f"throttle={command.throttle:.2f}   pitch={command.pitch:+.2f}   1 hold   2 fast   R reset",
             True,
             TEXT_COLOR,
         )

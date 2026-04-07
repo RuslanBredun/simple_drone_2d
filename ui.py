@@ -214,13 +214,19 @@ class DroneControlPanel:
             accent_color=UI_PITCH_COLOR,
             orientation="horizontal",
         )
-        auto_target_rect = pygame.Rect(self.rect.left + 24, self.rect.bottom - 164, 22, 22)
+        auto_target_rect = pygame.Rect(self.rect.left + 24, self.rect.bottom - 190, 22, 22)
         self.auto_target_checkbox = Checkbox(
             label="New target on reach",
             rect=auto_target_rect,
             checked=True,
         )
-        wind_rect = pygame.Rect(self.rect.left + 24, self.rect.bottom - 136, 22, 22)
+        moving_target_rect = pygame.Rect(self.rect.left + 24, self.rect.bottom - 162, 22, 22)
+        self.moving_target_checkbox = Checkbox(
+            label="Moving target",
+            rect=moving_target_rect,
+            checked=True,
+        )
+        wind_rect = pygame.Rect(self.rect.left + 24, self.rect.bottom - 134, 22, 22)
         self.wind_checkbox = Checkbox(
             label="Enable wind",
             rect=wind_rect,
@@ -232,6 +238,7 @@ class DroneControlPanel:
         handled = self.throttle.handle_event(event) or handled
         handled = self.pitch.handle_event(event) or handled
         handled = self.auto_target_checkbox.handle_event(event) or handled
+        handled = self.moving_target_checkbox.handle_event(event) or handled
         handled = self.wind_checkbox.handle_event(event) or handled
         return handled
 
@@ -260,6 +267,9 @@ class DroneControlPanel:
     def is_auto_target_enabled(self) -> bool:
         return self.auto_target_checkbox.checked
 
+    def is_target_motion_enabled(self) -> bool:
+        return self.moving_target_checkbox.checked
+
     def is_wind_enabled(self) -> bool:
         return self.wind_checkbox.checked
 
@@ -275,6 +285,7 @@ class DroneControlPanel:
         title = self.title_font.render("Drone Controls", True, TEXT_COLOR)
         surface.blit(title, (self.rect.left + 24, self.rect.top + 28))
         self.auto_target_checkbox.draw(surface, self.help_font)
+        self.moving_target_checkbox.draw(surface, self.help_font)
         self.wind_checkbox.draw(surface, self.help_font)
 
         self.throttle.draw(surface, self.label_font, self.value_font)
@@ -294,7 +305,7 @@ class DroneControlPanel:
         help_lines = (
             "W/S: throttle per press",
             "A/D: pitch per press",
-            "0: manual  1: smooth  2: fast  3: intercept",
+            "0: manual  1: hold  2: fast  3: intercept",
             "Space: pause    R: reset",
         )
         base_y = self.rect.bottom - 94

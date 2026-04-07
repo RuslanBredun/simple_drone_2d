@@ -110,7 +110,7 @@ class AutopilotController:
         velocity_damping_y: float = 2.0,
         command_smoothing: float = 0.18,
         max_pitch_command: float = 0.7,
-        status_prefix: str = "auto pid-smooth",
+        status_prefix: str = "auto hold",
     ) -> None:
         self.x_pid = x_pid or PIDController(kp=4.8, ki=0.02, kd=0.7, integral_limit=2.0, output_limit=5.0)
         self.y_pid = y_pid or PIDController(kp=1.6, ki=0.05, kd=0.9, integral_limit=2.0, output_limit=7.0)

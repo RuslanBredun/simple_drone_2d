@@ -208,7 +208,7 @@ def draw_hud(
     wind_enabled: bool,
     controller_output: ControllerOutput | None = None,
 ) -> None:
-    controls = font.render("W/S throttle  A/D pitch  0 manual  1 smooth  2 fast  3 intercept  R reset", True, TEXT_COLOR)
+    controls = font.render("W/S throttle  A/D pitch  0 manual  1 hold  2 fast  3 intercept  R reset", True, TEXT_COLOR)
     surface.blit(controls, (SIM_RECT.left + HUD_TEXT_OFFSET, HUD_TEXT_OFFSET))
 
     state = "PAUSED" if paused else "RUNNING"
@@ -515,7 +515,7 @@ def main() -> None:
                 elif event.key == pygame.K_0:
                     mode = "manual"
                 elif event.key == pygame.K_1:
-                    mode = "auto_smooth"
+                    mode = "auto_hold"
                     smooth_autopilot.reset()
                 elif event.key == pygame.K_2:
                     mode = "auto_fast"
@@ -528,13 +528,15 @@ def main() -> None:
 
             control_panel.handle_event(event)
 
-        if not paused:
+        if not paused and control_panel.is_target_motion_enabled():
             target_vel_mps = target_motion.update(task.target_pos_m, dt)
             append_history(target_history, task.target_pos_m)
+        elif not control_panel.is_target_motion_enabled():
+            target_vel_mps = Vector2(0, 0)
 
         if mode == "manual":
             command = get_manual_command(control_panel)
-        elif mode == "auto_smooth":
+        elif mode == "auto_hold":
             controller_output = smooth_autopilot.compute_command(
                 state=make_drone_state(body),
                 target=make_target_state(task, target_vel_mps),
